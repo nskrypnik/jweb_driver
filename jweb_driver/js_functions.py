@@ -10,15 +10,7 @@ JS_CODE_METHODS = {
         attr_values.push(node.getAttribute('${attr}'))
     })
 
-    if (!attr_values.length) {
-        return {
-            result: 'failure',
-            msg: 'Elements aren\\'t found'
-        }
-    }
-
     return {
-        result: 'success',
         data: attr_values
     }
 """,
@@ -27,21 +19,27 @@ JS_CODE_METHODS = {
 
     var node = document.querySelector('${selector}')
     if (!node) {
-        return {
-            result: 'failure',
-            msg: 'Elements aren\\'t found'
-        }
+        return
     }
     return {
-        result: 'success',
         data: node.getAttribute('${attr}')
     }
+""",
+
+'js_is_element':"""
+    return document.querySelectorAll('${selector}').length
 """
 }
 
-def js_execute_code(code, browser):
-    code = 'res = (function () {\n%s\n})()\n' % code
-    code += 'py_data_callback(res)'
+def js_execute_code(func_code, browser):
+    # wrap js code into the try-catch statement and function to be execute
+    # inside
+    code = 'try {\n'
+    code += 'res = (function () {\n%s\n})()\n' % func_code
+    code += 'py_data_callback(res)\n'
+    code += '} catch (e) {\n'
+    code += 'py_handle_exception(e)\n'
+    code += '}'
     browser.ExecuteJavascript(code)
 
 
@@ -57,4 +55,8 @@ def js_function(func):
 
 @js_function
 def js_get_attr(browser, **kw):
+    pass
+
+@js_function
+def js_is_element(browser, **kw):
     pass

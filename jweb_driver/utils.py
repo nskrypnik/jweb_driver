@@ -7,6 +7,7 @@ def _normalise_url(url):
     '''
     if url[-1] == '/':
         return url[:-1]
+    return url
 
 
 def are_urls_equal(url1, url2):

@@ -3,9 +3,13 @@ import sys
 from cefpython3 import cefpython as cef
 from .handler_wrappers import LoadHandlerWrapper, RequestHandlerWrapper
 from .utils import are_urls_equal
-from .js_functions import js_get_attr
+from .js_functions import js_get_attr, js_is_element
 
 BROWSER_LOOP_DELAY = 0.1
+
+# result values
+SUCCESS = 'success'
+FAILED = 'failed'
 
 def singletask(func):
     '''Decorator for returning a future object which should be resolved by
@@ -24,6 +28,10 @@ def singletask(func):
 
 class BrowserDriver:
     def __init__(self, loop):
+        self.WAIT_TIMEOUT = 60
+        self.INTERVAL_TIMEOUT = 0.25
+        self.MAX_POLLING = 200
+
         self.loop = loop
         self.lock = asyncio.Lock()
         self._init_browser()
@@ -39,12 +47,22 @@ class BrowserDriver:
         # create JS bindings
         self.js_bindings = cef.JavascriptBindings(bindToFrames=False, bindToPopups=False)
         self.js_bindings.SetFunction('py_data_callback', self._py_data_callback)
+        self.js_bindings.SetFunction('py_handle_exception', self._py_handle_exception)
         self.browser.SetJavascriptBindings(self.js_bindings)
 
     def _py_data_callback(self, js_data):
         '''Handle data set from JavaScript code
         '''
         self._future.set_result(js_data)
+
+    def _py_handle_exception(self, js_error):
+        '''Handle JavaScript exception caught while executing code
+        '''
+        self._future.set_exception(dict(
+            name=js_error.name,
+            message=js_error.message,
+            stack=js_error.stack
+        ))
 
     def run(self):
         self.loop.create_task(self.browser_message_loop())
@@ -87,7 +105,7 @@ class BrowserDriver:
     # --------------------------------------------------
 
     @singletask
-    async def openurl(self, url):
+    async def open_url(self, url):
         '''Open url in main frame
         '''
         frame = self.browser.GetMainFrame()
@@ -98,11 +116,52 @@ class BrowserDriver:
                 # redirect occured for original url
                 url = msg['data']['new_url'] # update url
             if msg['type'] == 'url' and are_urls_equal(msg['data'], url):
-                return dict(method='openurl', result='success', data=url)
+                return dict(method='openurl', result=SUCCESS, data=url)
 
     @singletask
     async def get_attr(self, selector, attr, forall=False):
         js_get_attr(self.browser, selector=selector, attr=attr, forall=forall)
         result = await self._future
-        result['method'] = 'get_attr'
+        if not result:
+            result = {}
+        result.update(dict(method='get_attr'))
+        if not 'data' in result:
+            result.update(result=FAILED, msg='Element isn\'t found')
+        else:
+            result.update(dict(result=SUCCESS))
         return result
+
+    @singletask
+    async def wait_for(self, url=None, selector=None):
+        result = dict(method='wait_for')
+        if url:
+            while True:
+                try:
+                    msg = asyncio.wait_for(self._queue.get(), self.WAIT_TIMEOUT)
+                except asyncio.TimeoutError:
+                    result.update(dict(
+                        result=FAILED,
+                        msg='Timout occured while waiting for url'
+                    ))
+                    return result
+                if msg['type'] == 'url' and are_urls_equal(msg['data'], url):
+                    result.update(dict(result=SUCCESS))
+                    return result
+        if selector:
+            attempts = 0
+            while True:
+                attempts += 1
+                js_is_element(self.browser, selector=selector)
+                count = await self._future
+                if count:
+                    result.update(dict(result=SUCCESS))
+                    return result
+                if attempts > self.MAX_POLLING:
+                    result.update(dict(
+                        result='FAILED',
+                        msg='Timeout occured while waiting for element'
+                    ))
+                    return result
+                # reset it after each attempt
+                self.reset_async_primitives()
+                await asyncio.sleep(self.INTERVAL_TIMEOUT)
