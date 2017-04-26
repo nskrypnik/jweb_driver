@@ -3,7 +3,7 @@ import sys
 from cefpython3 import cefpython as cef
 from .handler_wrappers import LoadHandlerWrapper, RequestHandlerWrapper
 from .utils import are_urls_equal
-from .js_functions import js_get_attr, js_is_element, js_click
+from .js_functions import js_get_attr, js_is_element, js_click, js_fill_input
 from .exceptions import OperationTimeout, ElementNotFound, JavaScriptError
 
 BROWSER_LOOP_DELAY = 0.1
@@ -177,5 +177,19 @@ class BrowserDriver:
         if (result):
             self.reset_async_primitives()
             js_click(self.browser, selector=selector)
+            await self._future
+            return True
+        return False
+
+    @singletask
+    async def fill_input(self, selector='', value='', forall=False):
+        '''Fill the input specified by selector
+        '''
+        js_is_element(self.browser, selector=selector)
+        result = await self._future
+        if (result):
+            self.reset_async_primitives()
+            js_fill_input(self.browser, selector=selector, value=value, forall=forall)
+            await self._future
             return True
         return False

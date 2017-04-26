@@ -22,6 +22,16 @@ JS_CODE_METHODS = {
 
 'js_click': """
     document.querySelector('${selector}').click()
+""",
+
+'js_fill_input': """
+    document.querySelector('${selector}').value = '${value}'
+""",
+
+'js_fill_input_all': """
+    document.querySelectorAll('${selector}').forEach(function (node) {
+        node.value = '${value}'
+    })
 """
 }
 
@@ -57,4 +67,8 @@ def js_is_element(browser, **kw):
 
 @js_function
 def js_click(browser, **kw):
+    pass
+
+@js_function
+def js_fill_input(browser, **kw):
     pass
