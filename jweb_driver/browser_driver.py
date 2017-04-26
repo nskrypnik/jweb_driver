@@ -3,13 +3,18 @@ import sys
 from cefpython3 import cefpython as cef
 from .handler_wrappers import LoadHandlerWrapper, RequestHandlerWrapper
 from .utils import are_urls_equal
-from .js_functions import js_get_attr, js_is_element
+from .js_functions import js_get_attr, js_is_element, js_click
+from .exceptions import OperationTimeout, ElementNotFound, JavaScriptError
 
 BROWSER_LOOP_DELAY = 0.1
 
 # result values
 SUCCESS = 'success'
 FAILED = 'failed'
+
+# timeout constants
+WAIT_TIMEOUT = 60
+INTERVAL_TIMEOUT = 0.25
 
 def singletask(func):
     '''Decorator for returning a future object which should be resolved by
@@ -30,7 +35,6 @@ class BrowserDriver:
     def __init__(self, loop):
         self.WAIT_TIMEOUT = 60
         self.INTERVAL_TIMEOUT = 0.25
-        self.MAX_POLLING = 200
 
         self.loop = loop
         self.lock = asyncio.Lock()
@@ -40,7 +44,11 @@ class BrowserDriver:
 
     def _init_browser(self):
         sys.excepthook = cef.ExceptHook  # To shutdown all CEF processes on error
-        cef.Initialize()
+        cef.Initialize({
+            'log_severity': cef.LOGSEVERITY_DISABLE,
+            'windowless_rendering_enabled': True,
+            'debug': False
+        })
         self.browser = cef.CreateBrowserSync(browserSettings=dict(image_load_disabled=True))
         self.browser.SetClientHandler(LoadHandlerWrapper(self))
         self.browser.SetClientHandler(RequestHandlerWrapper(self))
@@ -58,11 +66,7 @@ class BrowserDriver:
     def _py_handle_exception(self, js_error):
         '''Handle JavaScript exception caught while executing code
         '''
-        self._future.set_exception(dict(
-            name=js_error.name,
-            message=js_error.message,
-            stack=js_error.stack
-        ))
+        self._future.set_exception(JavaScriptError(js_error))
 
     def run(self):
         self.loop.create_task(self.browser_message_loop())
@@ -105,7 +109,7 @@ class BrowserDriver:
     # --------------------------------------------------
 
     @singletask
-    async def open_url(self, url):
+    async def open_url(self, url=''):
         '''Open url in main frame
         '''
         frame = self.browser.GetMainFrame()
@@ -116,52 +120,62 @@ class BrowserDriver:
                 # redirect occured for original url
                 url = msg['data']['new_url'] # update url
             if msg['type'] == 'url' and are_urls_equal(msg['data'], url):
-                return dict(method='openurl', result=SUCCESS, data=url)
+                return url
 
     @singletask
-    async def get_attr(self, selector, attr, forall=False):
+    async def get_attr(self, selector='', attr='', forall=False, safe=False):
+        '''Get attribute of specified by selector element.
+           If safe parameter is provided it won't raise an error in case when
+           element is not found.
+           Return a value of attribute or a list of values if forall is True
+        '''
         js_get_attr(self.browser, selector=selector, attr=attr, forall=forall)
         result = await self._future
-        if not result:
-            result = {}
-        result.update(dict(method='get_attr'))
-        if not 'data' in result:
-            result.update(result=FAILED, msg='Element isn\'t found')
-        else:
-            result.update(dict(result=SUCCESS))
+        if not result and not safe:
+            raise ElementNotFound(selector)
         return result
 
     @singletask
-    async def wait_for(self, url=None, selector=None):
-        result = dict(method='wait_for')
+    async def wait_for(self, url=None, selector=None, timeout=WAIT_TIMEOUT):
+        '''Wait for url to be loaded or element reachable by selector.
+           Return 1 for url if success and count of elements found with provided
+           selector.
+        '''
         if url:
             while True:
-                try:
-                    msg = asyncio.wait_for(self._queue.get(), self.WAIT_TIMEOUT)
-                except asyncio.TimeoutError:
-                    result.update(dict(
-                        result=FAILED,
-                        msg='Timout occured while waiting for url'
-                    ))
-                    return result
+                msg = asyncio.wait_for(self._queue.get(), timeout)
                 if msg['type'] == 'url' and are_urls_equal(msg['data'], url):
-                    result.update(dict(result=SUCCESS))
-                    return result
+                    return 1
         if selector:
+            max_attempts = int(timeout / INTERVAL_TIMEOUT)
             attempts = 0
             while True:
                 attempts += 1
                 js_is_element(self.browser, selector=selector)
                 count = await self._future
                 if count:
-                    result.update(dict(result=SUCCESS))
-                    return result
-                if attempts > self.MAX_POLLING:
-                    result.update(dict(
-                        result='FAILED',
-                        msg='Timeout occured while waiting for element'
-                    ))
-                    return result
+                    return count
+                if attempts > max_attempts:
+                    raise OperationTimeout('Timeout exceeded while waiting for selector')
                 # reset it after each attempt
                 self.reset_async_primitives()
                 await asyncio.sleep(self.INTERVAL_TIMEOUT)
+
+    @singletask
+    async def is_element(self, selector=''):
+        '''Check whether element exists in current document.
+        '''
+        js_is_element(self.browser, selector=selector)
+        return bool(await self._future)
+
+    @singletask
+    async def click(self, selector=''):
+        '''Trigget click event on specific element reachable by selector
+        '''
+        js_is_element(self.browser, selector=selector)
+        result = await self._future
+        if (result):
+            self.reset_async_primitives()
+            js_click(self.browser, selector=selector)
+            return True
+        return False

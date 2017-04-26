@@ -4,30 +4,24 @@ from string import Template
 
 JS_CODE_METHODS = {
 'js_get_attr_all': """
-
     var attr_values = []
     document.querySelectorAll('${selector}').forEach(function (node) {
         attr_values.push(node.getAttribute('${attr}'))
     })
-
-    return {
-        data: attr_values
-    }
+    return attr_values
 """,
 
 'js_get_attr': """
-
     var node = document.querySelector('${selector}')
-    if (!node) {
-        return
-    }
-    return {
-        data: node.getAttribute('${attr}')
-    }
+    return data: node.getAttribute('${attr}')
 """,
 
-'js_is_element':"""
+'js_is_element': """
     return document.querySelectorAll('${selector}').length
+""",
+
+'js_click': """
+    document.querySelector('${selector}').click()
 """
 }
 
@@ -59,4 +53,8 @@ def js_get_attr(browser, **kw):
 
 @js_function
 def js_is_element(browser, **kw):
+    pass
+
+@js_function
+def js_click(browser, **kw):
     pass
