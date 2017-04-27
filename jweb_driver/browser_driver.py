@@ -142,14 +142,19 @@ class BrowserDriver:
         return result
 
     @singletask
-    async def wait_for(self, selector=None, url=None, timeout=WAIT_TIMEOUT):
+    async def wait_for(self, selector=None, url=None, timeout=WAIT_TIMEOUT, safe=False):
         '''Wait for url to be loaded or element reachable by selector.
            Return 1 for url if success and count of elements found with provided
            selector.
         '''
         if url:
             while True:
-                msg = asyncio.wait_for(self._queue.get(), timeout)
+                try:
+                    msg = await asyncio.wait_for(self._queue.get(), timeout)
+                except asyncio.TimeoutError as e:
+                    if not safe:
+                        raise e
+                    return 0
                 if msg['type'] == 'url' and are_urls_equal(msg['data'], url):
                     return 1
         if selector:
@@ -162,7 +167,9 @@ class BrowserDriver:
                 if count:
                     return count
                 if attempts > max_attempts:
-                    raise OperationTimeout('Timeout exceeded while waiting for selector')
+                    if not safe:
+                        raise OperationTimeout('Timeout exceeded while waiting for selector')
+                    return 0
                 # reset it after each attempt
                 self.reset_async_primitives()
                 await asyncio.sleep(self.INTERVAL_TIMEOUT)
@@ -221,3 +228,20 @@ class BrowserDriver:
             if not safe:
                 raise ElementNotFound(selector)
         return '' if result is None else result
+
+
+    @singletask
+    async def expect_redirect(self, url='', timeout=WAIT_TIMEOUT, safe=False):
+        '''Wait for redirect
+        '''
+        frame = self.browser.GetMainFrame()
+        frame.LoadUrl(url)
+        while True:
+            try:
+                msg = await asyncio.wait_for(self._queue.get(), timeout)
+            except asyncio.TimeoutError as e:
+                if not safe:
+                    raise e
+                return
+            if msg['type'] == 'redirect':
+                return msg['data']['new_url']

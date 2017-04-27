@@ -4,8 +4,10 @@ from jweb_driver.browser_driver import BrowserDriver
 
 async def test_browser(driver):
     d = driver
-    result = await d.open_url('http://rbcroyalbank.com')
+    result = await d.expect_redirect('http://rbcroyalbank.com')
     print(result)
+    future = d.wait_for(url=result)
+    await future
     await d.wait_for(selector='.info-list')
     result = await d.get_attr('.info-list a', 'href', forall=True)
     print(result)
