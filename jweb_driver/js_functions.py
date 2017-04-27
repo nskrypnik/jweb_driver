@@ -32,6 +32,36 @@ JS_CODE_METHODS = {
     document.querySelectorAll('${selector}').forEach(function (node) {
         node.value = '${value}'
     })
+""",
+
+'js_get_text': """
+    var node = document.querySelector('${selector}')
+    if (node) {
+        return node.textContent
+    }
+""",
+
+'js_get_text_all': """
+    var result = []
+    document.querySelectorAll('${selector}').forEach(function (node) {
+        result.push(node.textContent)
+    })
+    return result
+""",
+
+'js_get_html': """
+    var node = document.querySelector('${selector}')
+    if (node) {
+        return node.innerHTML
+    }
+""",
+
+'js_get_html_all': """
+    var result = []
+    document.querySelectorAll('${selector}').forEach(function (node) {
+        result.push(node.innerHTML)
+    })
+    return result
 """
 }
 
@@ -71,4 +101,12 @@ def js_click(browser, **kw):
 
 @js_function
 def js_fill_input(browser, **kw):
+    pass
+
+@js_function
+def js_get_text(browser, **kw):
+    pass
+
+@js_function
+def js_get_html(browser, **kw):
     pass

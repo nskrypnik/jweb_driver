@@ -3,7 +3,8 @@ import sys
 from cefpython3 import cefpython as cef
 from .handler_wrappers import LoadHandlerWrapper, RequestHandlerWrapper
 from .utils import are_urls_equal
-from .js_functions import js_get_attr, js_is_element, js_click, js_fill_input
+from .js_functions import js_get_attr, js_is_element, js_click, js_fill_input, \
+    js_get_text, js_get_html
 from .exceptions import OperationTimeout, ElementNotFound, JavaScriptError
 
 BROWSER_LOOP_DELAY = 0.1
@@ -136,7 +137,7 @@ class BrowserDriver:
         return result
 
     @singletask
-    async def wait_for(self, url=None, selector=None, timeout=WAIT_TIMEOUT):
+    async def wait_for(self, selector=None, url=None, timeout=WAIT_TIMEOUT):
         '''Wait for url to be loaded or element reachable by selector.
            Return 1 for url if success and count of elements found with provided
            selector.
@@ -193,3 +194,25 @@ class BrowserDriver:
             await self._future
             return True
         return False
+
+    @singletask
+    async def get_text(self, selector='', forall=False, safe=False):
+        '''Get text content of element specified by selector
+        '''
+        js_get_text(self.browser, selector=selector, forall=forall)
+        result = await self._future
+        if result is None or result == []:
+            if not safe:
+                raise ElementNotFound(selector)
+        return '' if result is None else result
+
+    @singletask
+    async def get_html(self, selector='', forall=False, safe=False):
+        '''Get inner HTML of element specified by selector
+        '''
+        js_get_html(self.browser, selector=selector, forall=forall)
+        result = await self._future
+        if result is None or result == []:
+            if not safe:
+                raise ElementNotFound(selector)
+        return '' if result is None else result

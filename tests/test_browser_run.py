@@ -16,6 +16,13 @@ async def test_browser(driver):
     await d.fill_input(selector='#K1', value=sys.argv[1])
     await d.fill_input(selector='#Q1', value=sys.argv[2])
     await d.click('form#rbunxcgi button[type="submit"]')
+    await d.wait_for('#creditCards')
+    print(await d.get_text('h2'))
+    await d.click('#creditCards table a')
+    await d.wait_for('.ccadPostedTable')
+    print(await d.get_text('.ccadPostedTable tbody tr', forall=True))
+    print(await d.get_html('.cardImageCont', forall=True))
+
 
 if __name__ == '__main__':
     loop = asyncio.get_event_loop()
