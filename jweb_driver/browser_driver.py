@@ -1,6 +1,6 @@
 import asyncio
 import sys
-from cefpython3 import cefpython as cef
+from cefpython3 import cefpython
 from .handler_wrappers import LoadHandlerWrapper, RequestHandlerWrapper
 from .utils import are_urls_equal
 from .js_functions import js_get_attr, js_is_element, js_click, js_fill_input, \
@@ -33,10 +33,13 @@ def singletask(func):
 
 
 class BrowserDriver:
-    def __init__(self, loop):
+    def __init__(self, loop, cef=None):
         self.WAIT_TIMEOUT = 60
         self.INTERVAL_TIMEOUT = 0.25
 
+        self.cef = cef if cef is not None else cefpython
+        # If we received cef already, we assume that it's already initialized
+        self._cef_initialized = cef is not None
         self.loop = loop
         self.lock = asyncio.Lock()
         self._init_browser()
@@ -44,17 +47,18 @@ class BrowserDriver:
         self.reset_async_primitives()
 
     def _init_browser(self):
-        sys.excepthook = cef.ExceptHook  # To shutdown all CEF processes on error
-        cef.Initialize({
-            'log_severity': cef.LOGSEVERITY_DISABLE,
-            'windowless_rendering_enabled': True,
-            'debug': False
-        })
-        self.browser = cef.CreateBrowserSync(browserSettings=dict(image_load_disabled=True))
+        if not self._cef_initialized:
+            sys.excepthook = self.cef.ExceptHook  # To shutdown all CEF processes on error
+            self.cef.Initialize({
+                'log_severity': self.cef.LOGSEVERITY_DISABLE,
+                'windowless_rendering_enabled': True,
+                'debug': False
+            })
+        self.browser = self.cef.CreateBrowserSync(browserSettings=dict(image_load_disabled=True))
         self.browser.SetClientHandler(LoadHandlerWrapper(self))
         self.browser.SetClientHandler(RequestHandlerWrapper(self))
         # create JS bindings
-        self.js_bindings = cef.JavascriptBindings(bindToFrames=False, bindToPopups=False)
+        self.js_bindings = self.cef.JavascriptBindings(bindToFrames=False, bindToPopups=False)
         self.js_bindings.SetFunction('py_data_callback', self._py_data_callback)
         self.js_bindings.SetFunction('py_handle_exception', self._py_handle_exception)
         self.browser.SetJavascriptBindings(self.js_bindings)
@@ -74,7 +78,8 @@ class BrowserDriver:
         self.is_browser_running = True
 
     def shutdown(self):
-        cef.shutdown()
+        self.cef.shutdown()
+        self.is_browser_running = False
 
     def reset_async_primitives(self):
         '''Reset async primitives Futur and Queue for current task context
@@ -86,7 +91,7 @@ class BrowserDriver:
         '''Run browser message loop within asyncio loop
         '''
         while True:
-            cef.MessageLoopWork()
+            self.cef.MessageLoopWork()
             await asyncio.sleep(BROWSER_LOOP_DELAY)
 
     # --------------------------------------------------
