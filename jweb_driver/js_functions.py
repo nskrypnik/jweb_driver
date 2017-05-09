@@ -62,6 +62,10 @@ JS_CODE_METHODS = {
         result.push(node.innerHTML)
     })
     return result
+""",
+
+'js_get_location': """
+    return window.location.href
 """
 }
 
@@ -109,4 +113,8 @@ def js_get_text(browser, **kw):
 
 @js_function
 def js_get_html(browser, **kw):
+    pass
+
+@js_function
+def js_get_location(browser, **kw):
     pass

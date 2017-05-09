@@ -120,13 +120,6 @@ class BrowserDriver:
         '''
         frame = self.browser.GetMainFrame()
         frame.LoadUrl(url)
-        while True:
-            msg = await self._queue.get()
-            if msg['type'] == 'redirect' and are_urls_equal(msg['data']['old_url'], url):
-                # redirect occured for original url
-                url = msg['data']['new_url'] # update url
-            if msg['type'] == 'url' and are_urls_equal(msg['data'], url):
-                return url
 
     @singletask
     async def get_attr(self, selector='', attr='', forall=False, safe=False):
