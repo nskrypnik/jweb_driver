@@ -4,7 +4,7 @@ from cefpython3 import cefpython
 from .handler_wrappers import LoadHandlerWrapper, RequestHandlerWrapper
 from .utils import are_urls_equal
 from .js_functions import js_get_attr, js_is_element, js_click, js_fill_input, \
-    js_get_text, js_get_html
+    js_get_text, js_get_html, js_get_location
 from .exceptions import OperationTimeout, ElementNotFound, JavaScriptError
 
 BROWSER_LOOP_DELAY = 0.1
@@ -140,32 +140,32 @@ class BrowserDriver:
            Return 1 for url if success and count of elements found with provided
            selector.
         '''
-        if url:
-            while True:
-                try:
-                    msg = await asyncio.wait_for(self._queue.get(), timeout)
-                except asyncio.TimeoutError as e:
-                    if not safe:
-                        raise e
-                    return 0
-                if msg['type'] == 'url' and are_urls_equal(msg['data'], url):
-                    return 1
-        if selector:
-            max_attempts = int(timeout / INTERVAL_TIMEOUT)
-            attempts = 0
-            while True:
-                attempts += 1
+        max_attempts = int(timeout / INTERVAL_TIMEOUT)
+        attempts = 0
+        while True:
+            attempts += 1
+            if selector:
                 js_is_element(self.browser, selector=selector)
-                count = await self._future
-                if count:
-                    return count
-                if attempts > max_attempts:
-                    if not safe:
-                        raise OperationTimeout('Timeout exceeded while waiting for selector')
-                    return 0
-                # reset it after each attempt
-                self.reset_async_primitives()
-                await asyncio.sleep(self.INTERVAL_TIMEOUT)
+            if url:
+                js_get_location(self.browser)
+            res = await self._future
+            if selector:
+                if res:
+                    return res
+            if url:
+                if are_urls_equal(res, url):
+                    return res
+            if attempts > max_attempts:
+                if not safe:
+                    raise OperationTimeout(
+                        'Timeout exceeded while waiting for %s' %
+                        ('selector' if selector else 'url')
+                    )
+                return 0
+            # reset it after each attempt
+            self.reset_async_primitives()
+            await asyncio.sleep(self.INTERVAL_TIMEOUT)
+
 
     @singletask
     async def is_element(self, selector=''):
