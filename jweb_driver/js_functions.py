@@ -13,7 +13,7 @@ JS_CODE_METHODS = {
 
 'js_get_attr': """
     var node = document.querySelector('${selector}')
-    return data: node.getAttribute('${attr}')
+    return node.getAttribute('${attr}')
 """,
 
 'js_is_element': """
