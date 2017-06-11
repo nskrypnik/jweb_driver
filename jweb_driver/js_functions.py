@@ -22,7 +22,12 @@ JS_CODE_METHODS = {
 """,
 
 'js_click': """
-    document.querySelector('${selector}').click()
+    var event = document.createEvent("MouseEvents")
+    event.initMouseEvent("click", true, true, window,
+        0, 0, 0, 0, 0,
+        false, false, false, false,
+        0, null)
+    document.querySelector('${selector}').dispatchEvent(event)
 """,
 
 'js_fill_input': """
@@ -83,7 +88,8 @@ def js_execute_code(func_code, driver):
     code += '} catch (e) {\n'
     code += 'return {success: false, error: {name: e.name, message: e.message}}\n'
     code += '} }) ()'
-    driver.browser.page().runJavaScript(code, driver.javascript_callback)
+    res = driver.browser.page().currentFrame().evaluateJavaScript(code)
+    driver.javascript_callback(res)
 
 
 def js_function(func):
