@@ -1,6 +1,9 @@
 import asyncio
 import sys
 from jweb_driver.browser_driver import BrowserDriver
+from quamash import QEventLoop as QtAsyncioLoop
+from PyQt5.QtWidgets import QApplication
+
 
 async def test_browser(driver):
     d = driver
@@ -27,7 +30,9 @@ async def test_browser(driver):
 
 
 if __name__ == '__main__':
-    loop = asyncio.get_event_loop()
+    app = QApplication(sys.argv)
+    loop = QtAsyncioLoop(app)
+    asyncio.set_event_loop(loop)
     driver = BrowserDriver(loop)
     driver.run()
     loop.create_task(test_browser(driver))
