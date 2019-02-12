@@ -2,7 +2,7 @@ import asyncio
 import sys
 from jweb_driver.browser_driver import BrowserDriver
 from quamash import QEventLoop as QtAsyncioLoop
-from PyQt4.QtGui import QApplication
+from PyQt5.QtWidgets import QApplication
 
 
 async def test_browser(driver):

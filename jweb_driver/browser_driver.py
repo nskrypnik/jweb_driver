@@ -5,8 +5,8 @@ from .utils import are_urls_equal
 from .js_functions import js_get_attr, js_is_element, js_click, js_fill_input, \
     js_get_text, js_get_html, js_get_location
 from .exceptions import OperationTimeout, ElementNotFound, JavaScriptError
-from PyQt4.QtWebKit import *
-from PyQt4.QtCore import QUrl
+from PyQt5.QtWebEngineWidgets import *
+from PyQt5.QtCore import QUrl
 
 BROWSER_LOOP_DELAY = 0.1
 
@@ -61,7 +61,7 @@ class BrowserDriver:
         # self.js_bindings.SetFunction('py_handle_exception', self._py_handle_exception)
         # self.browser.SetJavascriptBindings(self.js_bindings)
 
-        self.browser = QWebView()
+        self.browser = QWebEngineView()
         self.browser.page().loadFinished.connect(self.on_load_end)
 
     def javascript_callback(self, result):
@@ -95,7 +95,7 @@ class BrowserDriver:
     # --------------------------------------------------
 
     def on_load_end(self, ok):
-        url = self.browser.page().currentFrame().url().toString()
+        url = self.browser.page().url().toString()
         self._queue.put_nowait(dict(type='url', data=url))
 
     def on_resource_redirect(self, browser, frame, old_url, new_url_out, request, response):
