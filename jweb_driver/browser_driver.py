@@ -1,12 +1,11 @@
 import asyncio
 import sys
+from cefpython3 import cefpython
 from .handler_wrappers import LoadHandlerWrapper, RequestHandlerWrapper
 from .utils import are_urls_equal
 from .js_functions import js_get_attr, js_is_element, js_click, js_fill_input, \
     js_get_text, js_get_html, js_get_location
 from .exceptions import OperationTimeout, ElementNotFound, JavaScriptError
-from PyQt5.QtWebEngineWidgets import *
-from PyQt5.QtCore import QUrl
 
 BROWSER_LOOP_DELAY = 0.1
 
@@ -34,10 +33,13 @@ def singletask(func):
 
 
 class BrowserDriver:
-    def __init__(self, loop):
+    def __init__(self, loop, cef=None):
         self.WAIT_TIMEOUT = 60
         self.INTERVAL_TIMEOUT = 0.25
 
+        self.cef = cef if cef is not None else cefpython
+        # If we received cef already, we assume that it's already initialized
+        self._cef_initialized = cef is not None
         self.loop = loop
         self.lock = asyncio.Lock()
         self._init_browser()
@@ -45,36 +47,38 @@ class BrowserDriver:
         self.reset_async_primitives()
 
     def _init_browser(self):
-        # if not self._cef_initialized:
-        #     sys.excepthook = self.cef.ExceptHook  # To shutdown all CEF processes on error
-        #     self.cef.Initialize({
-        #         'log_severity': self.cef.LOGSEVERITY_DISABLE,
-        #         'windowless_rendering_enabled': True,
-        #         'debug': False
-        #     })
-        # self.browser = self.cef.CreateBrowserSync(browserSettings=dict(image_load_disabled=True))
-        # self.browser.SetClientHandler(LoadHandlerWrapper(self))
-        # self.browser.SetClientHandler(RequestHandlerWrapper(self))
-        # # create JS bindings
-        # self.js_bindings = self.cef.JavascriptBindings(bindToFrames=False, bindToPopups=False)
-        # self.js_bindings.SetFunction('py_data_callback', self._py_data_callback)
-        # self.js_bindings.SetFunction('py_handle_exception', self._py_handle_exception)
-        # self.browser.SetJavascriptBindings(self.js_bindings)
+        if not self._cef_initialized:
+            sys.excepthook = self.cef.ExceptHook  # To shutdown all CEF processes on error
+            self.cef.Initialize({
+                'log_severity': self.cef.LOGSEVERITY_DISABLE,
+                'windowless_rendering_enabled': True,
+                'debug': False
+            })
+        self.browser = self.cef.CreateBrowserSync(browserSettings=dict(image_load_disabled=True))
+        self.browser.SetClientHandler(LoadHandlerWrapper(self))
+        self.browser.SetClientHandler(RequestHandlerWrapper(self))
+        # create JS bindings
+        self.js_bindings = self.cef.JavascriptBindings(bindToFrames=False, bindToPopups=False)
+        self.js_bindings.SetFunction('py_data_callback', self._py_data_callback)
+        self.js_bindings.SetFunction('py_handle_exception', self._py_handle_exception)
+        self.browser.SetJavascriptBindings(self.js_bindings)
 
-        self.browser = QWebEngineView()
-        self.browser.page().loadFinished.connect(self.on_load_end)
+    def _py_data_callback(self, js_data):
+        '''Handle data set from JavaScript code
+        '''
+        self._future.set_result(js_data)
 
-    def javascript_callback(self, result):
-        if result['success']:
-            self._future.set_result(result.get('data', None))
-        else:
-            self._future.set_exception(JavaScriptError(result['error']))
+    def _py_handle_exception(self, js_error):
+        '''Handle JavaScript exception caught while executing code
+        '''
+        self._future.set_exception(JavaScriptError(js_error))
 
     def run(self):
-        self.browser.show()
+        self.loop.create_task(self.browser_message_loop())
         self.is_browser_running = True
 
     def shutdown(self):
+        self.cef.shutdown()
         self.is_browser_running = False
 
     def reset_async_primitives(self):
@@ -94,9 +98,8 @@ class BrowserDriver:
     # browser event handlers
     # --------------------------------------------------
 
-    def on_load_end(self, ok):
-        url = self.browser.page().url().toString()
-        self._queue.put_nowait(dict(type='url', data=url))
+    def on_load_end(self, browser, frame, http_code):
+        self._queue.put_nowait(dict(type='url', data=frame.GetUrl()))
 
     def on_resource_redirect(self, browser, frame, old_url, new_url_out, request, response):
         self._queue.put_nowait(dict(
@@ -112,12 +115,11 @@ class BrowserDriver:
     # --------------------------------------------------
 
     @singletask
-    async def open_url(self, url='', timeout=WAIT_TIMEOUT):
+    async def open_url(self, url=''):
         '''Open url in main frame
         '''
-        self.browser.load(QUrl(url))
-        res = await asyncio.wait_for(self._queue.get(), timeout)
-        return res['data']
+        frame = self.browser.GetMainFrame()
+        frame.LoadUrl(url)
 
     @singletask
     async def get_attr(self, selector='', attr='', forall=False, safe=False):
@@ -126,7 +128,7 @@ class BrowserDriver:
            element is not found.
            Return a value of attribute or a list of values if forall is True
         '''
-        js_get_attr(self, selector=selector, attr=attr, forall=forall)
+        js_get_attr(self.browser, selector=selector, attr=attr, forall=forall)
         result = await self._future
         if not result and not safe:
             raise ElementNotFound(selector)
@@ -143,9 +145,9 @@ class BrowserDriver:
         while True:
             attempts += 1
             if selector:
-                js_is_element(self, selector=selector)
+                js_is_element(self.browser, selector=selector)
             if url:
-                js_get_location(self)
+                js_get_location(self.browser)
             res = await self._future
             if selector:
                 if res:
@@ -169,18 +171,18 @@ class BrowserDriver:
     async def is_element(self, selector=''):
         '''Check whether element exists in current document.
         '''
-        js_is_element(self, selector=selector)
+        js_is_element(self.browser, selector=selector)
         return bool(await self._future)
 
     @singletask
     async def click(self, selector=''):
         '''Trigget click event on specific element reachable by selector
         '''
-        js_is_element(self, selector=selector)
+        js_is_element(self.browser, selector=selector)
         result = await self._future
         if (result):
             self.reset_async_primitives()
-            js_click(self, selector=selector)
+            js_click(self.browser, selector=selector)
             await self._future
             return True
         return False
@@ -189,11 +191,11 @@ class BrowserDriver:
     async def fill_input(self, selector='', value='', forall=False):
         '''Fill the input specified by selector
         '''
-        js_is_element(self, selector=selector)
+        js_is_element(self.browser, selector=selector)
         result = await self._future
         if (result):
             self.reset_async_primitives()
-            js_fill_input(self, selector=selector, value=value, forall=forall)
+            js_fill_input(self.browser, selector=selector, value=value, forall=forall)
             await self._future
             return True
         return False
@@ -202,7 +204,7 @@ class BrowserDriver:
     async def get_text(self, selector='', forall=False, safe=False):
         '''Get text content of element specified by selector
         '''
-        js_get_text(self, selector=selector, forall=forall)
+        js_get_text(self.browser, selector=selector, forall=forall)
         result = await self._future
         if result is None or result == []:
             if not safe:
@@ -213,7 +215,7 @@ class BrowserDriver:
     async def get_html(self, selector='', forall=False, safe=False):
         '''Get inner HTML of element specified by selector
         '''
-        js_get_html(self, selector=selector, forall=forall)
+        js_get_html(self.browser, selector=selector, forall=forall)
         result = await self._future
         if result is None or result == []:
             if not safe:
@@ -223,6 +225,16 @@ class BrowserDriver:
 
     @singletask
     async def expect_redirect(self, url='', timeout=WAIT_TIMEOUT, safe=False):
-        self.browser.load(QUrl(url))
-        res = await asyncio.wait_for(self._queue.get(), timeout)
-        return res['data']
+        '''Wait for redirect
+        '''
+        frame = self.browser.GetMainFrame()
+        frame.LoadUrl(url)
+        while True:
+            try:
+                msg = await asyncio.wait_for(self._queue.get(), timeout)
+            except asyncio.TimeoutError as e:
+                if not safe:
+                    raise e
+                return
+            if msg['type'] == 'redirect':
+                return msg['data']['new_url']

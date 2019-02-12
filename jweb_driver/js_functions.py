@@ -5,10 +5,9 @@ from string import Template
 JS_CODE_METHODS = {
 'js_get_attr_all': """
     var attr_values = []
-    var arr = document.querySelectorAll('${selector}')
-    for (var i=0; i < arr.length; i++) {
-        attr_values.push(arr[i].getAttribute('${attr}'))
-    }
+    document.querySelectorAll('${selector}').forEach(function (node) {
+        attr_values.push(node.getAttribute('${attr}'))
+    })
     return attr_values
 """,
 
@@ -30,10 +29,9 @@ JS_CODE_METHODS = {
 """,
 
 'js_fill_input_all': """
-    var arr = document.querySelectorAll('${selector}')
-    for (var i=0; i < arr.length; i++) {
-        arr[i].value = '${value}'
-    }
+    document.querySelectorAll('${selector}').forEach(function (node) {
+        node.value = '${value}'
+    })
 """,
 
 'js_get_text': """
@@ -45,10 +43,9 @@ JS_CODE_METHODS = {
 
 'js_get_text_all': """
     var result = []
-    var arr = document.querySelectorAll('${selector}')
-    for (var i=0; i < arr.length; i++) {
-        result.push(arr[i].textContent)
-    }
+    document.querySelectorAll('${selector}').forEach(function (node) {
+        result.push(node.textContent)
+    })
     return result
 """,
 
@@ -61,10 +58,9 @@ JS_CODE_METHODS = {
 
 'js_get_html_all': """
     var result = []
-    var arr = document.querySelectorAll('${selector}')
-    for (var i=0; i < arr.length; i++) {
-        result.push(arr[i].innerHTML)
-    }
+    document.querySelectorAll('${selector}').forEach(function (node) {
+        result.push(node.innerHTML)
+    })
     return result
 """,
 
@@ -73,26 +69,25 @@ JS_CODE_METHODS = {
 """
 }
 
-def js_execute_code(func_code, driver):
+def js_execute_code(func_code, browser):
     # wrap js code into the try-catch statement and function to be execute
     # inside
-    code = '(function () {'
-    code += 'try {\n'
+    code = 'try {\n'
     code += 'res = (function () {\n%s\n})()\n' % func_code
-    code += 'return {success: true, data: res}\n'
+    code += 'py_data_callback(res)\n'
     code += '} catch (e) {\n'
-    code += 'return {success: false, error: {name: e.name, message: e.message}}\n'
-    code += '} }) ()'
-    driver.browser.page().runJavaScript(code, driver.javascript_callback)
+    code += 'py_handle_exception(e)\n'
+    code += '}'
+    browser.ExecuteJavascript(code)
 
 
 def js_function(func):
-    def wrapper(driver, **kw):
+    def wrapper(browser, **kw):
         func_name = func.__name__
         if kw.get('forall', False):
             func_name += '_all'
         code = Template(JS_CODE_METHODS[func_name]).safe_substitute(kw)
-        js_execute_code(code, driver)
+        js_execute_code(code, browser)
     return wrapper
 
 
